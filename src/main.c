@@ -12,6 +12,7 @@
 #include "../include/mt19937.h"
 #include "../include/sqms_geometry.h"
 #include "../include/sqms_pair_potentials.h"
+#include "../include/sqms_pair_energy_matrix.h"
 //#include <mt19937.h>
 
 #ifndef M_PI
@@ -23,18 +24,20 @@
 /* ------------------------  */
 
 #define NDIM 3 //number of dimensions
-#define NMAX 100 //max number of particles
-#define ITER_MAX 10000000 //max number of iterations
+#define NMAX 32 //max number of particles
+#define ITER_MAX 100000000 //max number of iterations
 
 int n_particles = NMAX; //number of particles
 enum detection{YES, NO};
-const int mc_steps = 10000; //it says steps but they are in fact sweeps
+const int mc_steps = 100000; //it says steps but they are in fact sweeps
 const int output_steps = 100; //output a file every this many sweeps
 const double diameter = 1.0; //particle diameter
-double delta = 0.05; //MCMC move delta
+double delta = 0.02; //MCMC move delta
+double beta = 100; //inverse temperature
 const char* init_filename = "coords_step-000001.dat";
-enum detection collision_detection = YES; //detect hard cores
+enum detection collision_detection = NO; //detect hard cores
 
+const double eps = 1e-1;
 
 /* ---------------------  */
 /*  Simulation variables  */
@@ -44,8 +47,9 @@ enum detection collision_detection = YES; //detect hard cores
 double radius, LJ_length_cutoff2, LJ_energy_cutoff,LJ_length_scale_squared;
 double particle_volume;
 double r[NMAX][NDIM];
-double particle_energies[NMAX];
+//double particle_energies[NMAX];
 double total_energy;
+double energy_matrix[ (NMAX * (NMAX + 1))/2 ];
 double Box[NDIM];
 
 /* ---------------------------------  */
@@ -122,13 +126,10 @@ double pair_potential(double distance_square)
 
 void init_particle_energies(void)
 {
+    SqMS_init_energy_matrix(n_particles,energy_matrix);
     total_energy = 0;
     double p_energy = 0;
     double p_dist2 = 0;
-    for(size_t i = 0; i<n_particles; i++)
-    {
-        particle_energies[i] = 0;
-    }
 
     for(size_t i = 0; i<n_particles; i++)
     {
@@ -138,9 +139,8 @@ void init_particle_energies(void)
             if (p_dist2 < LJ_length_cutoff2)
             {
                 p_energy = pair_potential(p_dist2);
+                SqMS_set_energy_of_pair(p_energy,i,j,energy_matrix);
                 total_energy += p_energy;
-                particle_energies[i] += p_energy;
-                particle_energies[j] += p_energy;
             }
         }
     }
@@ -149,6 +149,7 @@ void init_particle_energies(void)
 double particle_energy(int particle_id)
 {
     double p_energy = 0;
+    double t_energy = 0;
     double p_dist2 = 0;
     for(size_t i = 0; i<n_particles; i++)
     {
@@ -157,10 +158,19 @@ double particle_energy(int particle_id)
         p_dist2 = dist2(r[i],r[particle_id]);
         if (p_dist2 < LJ_length_cutoff2)
         {
-            p_energy += pair_potential(p_dist2);
+            p_energy = pair_potential(p_dist2);
+            SqMS_set_energy_of_pair(p_energy,i,particle_id,energy_matrix);
+            t_energy += p_energy;
         }
     }
-    return p_energy;
+    double check_energy = SqMS_get_energy_from_pair(particle_id,particle_id,energy_matrix);
+    double diff = fabs(t_energy - check_energy);
+    if (diff > eps)
+    {
+        assert(diff < eps);
+    }
+    
+    return t_energy;
 }
 
 /* ___________________________  */
@@ -173,7 +183,9 @@ int move_particle(double del)
     
     double backup[NDIM]; //backup the position in case the proposed displacement gets rejected
     memcpy(backup, r[n], NDIM*sizeof(double));
-    
+    double old_energy = SqMS_get_energy_from_pair(n,n,energy_matrix);
+    //double old_energy = particle_energy(n);
+
     for (size_t i = 0; i < NDIM; i++) //propose a particle displacement
     {
         r[n][i] += (2*dsfmt_genrand()-1)*del;
@@ -206,12 +218,31 @@ int move_particle(double del)
                 return 0 ;
             }
         }
-            return 1 ;
+    }
+    //pair potential
+    //double new_energy = particle_energy(n);
+    particle_energy(n);
+    double new_energy = SqMS_get_energy_from_pair(n,n,energy_matrix);
+    double dE = new_energy - old_energy;
+    double rnumber = dsfmt_genrand();
+
+    if(dE < 0.0 || rnumber < exp(-beta * dE)){
+        
+       /* if (dE > 0)
+        {
+            
+            printf("dE is %lf, rnumber is %lf, bfactor is %lf, total energy is %lf\n",dE,rnumber,exp(-beta * dE), total_energy);
+        }*/
+        total_energy += dE;
+        return 1;
     }
     else
     {
-        return 1;
+        memcpy(r[n], backup, NDIM*sizeof(double));
+        particle_energy(n); //to update energy matrix THIS CAN BE OPTIMIZED!
+        return 0;
     }
+
         
 }
 
@@ -231,7 +262,8 @@ double MCsim(double del)
             accepted += move_particle(del);
         }
         if(step % output_steps == 0){
-            printf("Step %d. Move acceptance: %lf.\n", step, (double)accepted / (n_particles * output_steps));
+            printf("Step %d. Move acceptance: %lf, total energy: %lf.\n", 
+            step, (double)accepted / (n_particles * output_steps), total_energy);
             accepted = 0;
             write_data(step);
         }
@@ -302,7 +334,7 @@ int main(int argc, const char * argv[])
 
     for (size_t i = 0; i < NDIM; i++)
     {
-        Box[i] = 5.167;
+        Box[i] = 3.55;
     }
     
 
@@ -326,7 +358,12 @@ int main(int argc, const char * argv[])
     
     //dsfmt_seed ((int) time (NULL) ) ;
     dsfmt_seed (314159) ;
+    
     init_positions_hot();
+    init_particle_energies();
+
+
+
     write_data(0); //writes initial config
     int accepted = 0;
     int step, n;
@@ -336,7 +373,8 @@ int main(int argc, const char * argv[])
         }
 
         if(step % output_steps == 0){
-            printf("Step %d. Move acceptance: %lf.\n", step, (double)accepted / (n_particles * output_steps));
+            printf("Step %d. Move acceptance: %lf, total energy: %lf.\n", 
+            step, (double)accepted / (n_particles * output_steps), total_energy);
             accepted = 0;
             write_data(step);
         }
