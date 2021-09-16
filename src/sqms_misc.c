@@ -56,3 +56,15 @@ int SqMS_biggest_lower_bound(const double arr[], const int n, const double x)
 
     return low;
 }
+
+int powi(int base, unsigned int exp){
+
+    if (exp == 0)
+        return 1;
+    int temp = powi(base, exp/2);
+    if (exp%2 == 0)
+        return temp*temp;
+    else
+        return base*temp*temp;
+
+}

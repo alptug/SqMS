@@ -9,6 +9,8 @@ int SqMS_binarysearch(double arr[], int l, int r, double x);
   
 int SqMS_biggest_lower_bound(const double arr[], const int n, const double x);
 
+int powi(int base, unsigned int exp);
+
 #if defined(__cplusplus)
 }
 #endif

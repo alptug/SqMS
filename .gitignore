@@ -5,3 +5,11 @@ mt19937backup.h
 data/
 bin/
 obj/
+bin/main
+obj/main.o
+obj/sqms_geometry.o
+bin/main
+mainwocellist.c
+obj/main.o
+obj/sqms_geometry.o
+obj/sqms_pair_potentials.o
