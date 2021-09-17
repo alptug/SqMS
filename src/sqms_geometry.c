@@ -111,6 +111,7 @@ int SqMS_add_particle_to_cell(right_cell_list_t* cell_list,
 {
   
     assert(cell_list->cell_population[cell_id] < cell_list->max_population_per_cell);
+    assert(cell_id < cell_list->num_cell);
     int particle_id = cell_id*cell_list->max_population_per_cell+cell_list->cell_population[cell_id];
     int particle_id_advised = cell_id*cell_list->max_population_per_cell+cell_list->advised_insertion[cell_id];
     int last_stand=0, last_found=0;
@@ -152,13 +153,12 @@ int SqMS_add_particle_to_cell(right_cell_list_t* cell_list,
 int SqMS_find_where_particle_belongs(right_cell_list_t* cell_list, double *r)
 {
     int cell_position[NDIM];
-    int cell_id = 0;
     for (size_t i = 0; i < NDIM; i++)
     {
-        cell_position[i] = SqMS_biggest_lower_bound(cell_list->limits[i],cell_list->list_shape[i]+1, r[i]);
-        cell_id *= cell_list->list_shape[i];
-        cell_id += cell_position[i];
+        cell_position[i] = SqMS_biggest_lower_bound(cell_list->limits[i],cell_list->list_shape[i], r[i]);
     }
+    int cell_id = SqMS_cell_position_to_id(cell_list, cell_position);
+    
     return cell_id;
 }
 
@@ -200,8 +200,7 @@ int SqMS_cell_position_to_id(right_cell_list_t* cell_list, int cell_position[])
 {
     int cell_id = 0;
     for (size_t i = 0; i < NDIM; i++)
-    {
-        
+    { 
         cell_id *= cell_list->list_shape[i];
         cell_id += cell_position[i];
     }
@@ -234,20 +233,21 @@ void __SqMS_get_rigid_bounding_box_nestedloops(right_cell_list_t *cell_list, bou
     }
     else
     {
+        int neighbour_cell[NDIM];
         for (size_t j = 0; j < NDIM; j++)
         {
-            shifter[j] += cell_position[j];
-                if (shifter[j]<0)
+            neighbour_cell[j] = shifter[j] + cell_position[j];
+                if (neighbour_cell[j]<0)
                 {
-                    shifter[j] += cell_list->list_shape[j];
+                    neighbour_cell[j] += cell_list->list_shape[j];
                 }
-                else if (shifter[j] >=cell_list->list_shape[j])
+                else if (neighbour_cell[j] >=cell_list->list_shape[j])
                 {
-                    shifter[j] -= cell_list->list_shape[j];
+                    neighbour_cell[j] -= cell_list->list_shape[j];
                 }
         }
 
-        bbox->cell_indices[*index] = SqMS_cell_position_to_id(cell_list,shifter);
+        bbox->cell_indices[*index] = SqMS_cell_position_to_id(cell_list,neighbour_cell);
         *index += 1; 
     }
 

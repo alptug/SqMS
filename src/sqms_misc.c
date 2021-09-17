@@ -33,6 +33,8 @@ int binarySearch(double arr[], int l, int r, double x)
 int SqMS_biggest_lower_bound(const double arr[], const int n, const double x)
 {
     int low = 0, high=n;
+    assert(x <= arr[n]);
+    assert(x>= arr[0]);
 
     while (high - low != 1)
     {

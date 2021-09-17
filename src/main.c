@@ -23,19 +23,20 @@
 /* Initialization variables  */
 /* ------------------------  */
 
-#define NDIM 3 //number of dimensions
-#define NMAX 256 //max number of particles
+//#define NDIM 2 //number of dimensions
+#define NMAX 80 //max number of particles
 #define ITER_MAX 100000000 //max number of iterations
+#define SANITY_CHECK 1
 
 int n_particles = NMAX; //number of particles
 enum detection{YES, NO};
-const int mc_steps = 50000; //it says steps but they are in fact sweeps
+const int mc_steps = 20000; //it says steps but they are in fact sweeps
 const int output_steps = 100; //output a file every this many sweeps
 const double diameter = 1.0; //particle diameter
-double delta = 0.1; //MCMC move delta
-double beta = 100; //inverse temperature
+double delta = 0.004; //MCMC move delta
+double beta = 10; //inverse temperature
 const char* init_filename = "coords_step-000001.dat";
-enum detection collision_detection = YES; //detect hard cores
+enum detection collision_detection = NO; //detect hard cores
 
 right_cell_list_t cell_list;
 
@@ -48,10 +49,7 @@ const double eps = 1e-1;
 
 double radius, LJ_length_cutoff2, LJ_energy_cutoff,LJ_length_scale_squared;
 double particle_volume;
-//double r[NMAX][NDIM];
-//right_cell_list_t cell_list;
 
-//double particle_energies[NMAX];
 double total_energy;
 double energy_matrix[ (NMAX * (NMAX + 1))/2 ];
 double Box[NDIM];
@@ -85,22 +83,6 @@ double Box[NDIM];
     fclose(fp);
 }*/
 
-/*void write_data(int step){
-    char buffer[128];
-    sprintf(buffer, "data/coords_step%07d.dat", step);
-    FILE* fp = fopen(buffer, "w");
-    int d, n;
-    fprintf(fp, "%d\n", n_particles);
-    for(d = 0; d < NDIM; ++d){
-        fprintf(fp, "%lf %lf\n",0.0,Box[d]);
-    }
-    for(n = 0; n < n_particles; ++n){
-        for(d = 0; d < NDIM; ++d) fprintf(fp, "%f\t", r[n][d]);
-        fprintf(fp, "%lf\n", diameter);
-    }
-    fclose(fp);
-}*/
-
 void write_data_cell(int step){
     char buffer[128];
     sprintf(buffer, "data/coords_step%07d.dat", step);
@@ -110,12 +92,15 @@ void write_data_cell(int step){
     for(d = 0; d < NDIM; ++d){
         fprintf(fp, "%lf %lf\n",0.0,Box[d]);
     }
+    if (NDIM == 2) fprintf(fp, "%lf %lf\n",0.0,1.0);
+
     for (size_t i = 0; i < cell_list.max_population; i++)
     {
         /* code */
         if (cell_list.cell[i].isplaceholder == 0)
         {
             for(d = 0; d < NDIM; ++d) fprintf(fp, "%f\t", cell_list.cell[i].r[d]);
+            if (NDIM == 2) fprintf(fp, "%f\t", 0.);
             fprintf(fp, "%lf\n", 2.*cell_list.cell[i].radius);
         }
         
@@ -149,28 +134,6 @@ double pair_potential(double distance_square)
     return SqMS_truncated_LJ_potential_unsafe(distance_square, LJ_length_scale_squared, 1., LJ_energy_cutoff);
 }
 
-/*void init_particle_energies(void)
-{
-    SqMS_init_energy_matrix(n_particles,energy_matrix);
-    total_energy = 0;
-    double p_energy = 0;
-    double p_dist2 = 0;
-
-    for(size_t i = 0; i<n_particles; i++)
-    {
-        for(size_t j = 0; j<i; j++)
-        {
-            p_dist2 = dist2(r[i],r[j]);
-            if (p_dist2 < LJ_length_cutoff2)
-            {
-                p_energy = pair_potential(p_dist2);
-                SqMS_set_energy_of_pair(p_energy,i,j,energy_matrix);
-                total_energy += p_energy;
-            }
-        }
-    }
-}*/
-
 void init_particle_energies_cell(void)
 {
     SqMS_init_energy_matrix(n_particles,energy_matrix);
@@ -188,9 +151,9 @@ void init_particle_energies_cell(void)
         for(size_t j = 0; j<i; j++)
         {
             if (cell_list.cell[j].isplaceholder == 1)
-        {
-            continue;
-        }
+            {
+                continue;
+            }
             p_dist2 = dist2(cell_list.cell[i].r,cell_list.cell[j].r);
             if (p_dist2 < LJ_length_cutoff2)
             {
@@ -201,60 +164,6 @@ void init_particle_energies_cell(void)
         }
     }
 }
-
-/*double particle_energy(int particle_id)
-{
-    double p_energy = 0;
-    double t_energy = 0;
-    double p_dist2 = 0;
-    for(size_t i = 0; i<n_particles; i++)
-    {
-        if (particle_id == i) continue;
-
-        p_dist2 = dist2(r[i],r[particle_id]);
-        if (p_dist2 < LJ_length_cutoff2)
-        {
-            p_energy = pair_potential(p_dist2);
-            SqMS_set_energy_of_pair(p_energy,i,particle_id,energy_matrix);
-            t_energy += p_energy;
-        }
-    }
-    double check_energy = SqMS_get_energy_from_pair(particle_id,particle_id,energy_matrix);
-    double diff = fabs(t_energy - check_energy);
-    if (diff > eps)
-    {
-        assert(diff < eps);
-    }
-    
-    return t_energy;
-}*/
-
-/* double particle_energy(int particle_id)
-{
-    double p_energy = 0;
-    double t_energy = 0;
-    double p_dist2 = 0;
-    for(size_t i = 0; i<n_particles; i++)
-    {
-        if (particle_id == i) continue;
-
-        p_dist2 = dist2(r[i],r[particle_id]);
-        if (p_dist2 < LJ_length_cutoff2)
-        {
-            p_energy = pair_potential(p_dist2);
-            SqMS_set_energy_of_pair(p_energy,i,particle_id,energy_matrix);
-            t_energy += p_energy;
-        }
-    }
-    double check_energy = SqMS_get_energy_from_pair(particle_id,particle_id,energy_matrix);
-    double diff = fabs(t_energy - check_energy);
-    if (diff > eps)
-    {
-        assert(diff < eps);
-    }
-    
-    return t_energy;
-} */
 
 double particle_energy_cell_list(bounding_box_t *bbox, particle_t *particle)
 {
@@ -315,8 +224,6 @@ double particle_energy_cell_list(bounding_box_t *bbox, particle_t *particle)
 
 int move_particle(double del)
 {
-    //int n = (int)(dsfmt_genrand()*n_particles); //choose a random particle
-
     
     int cell_ind = (int)(dsfmt_genrand()*cell_list.num_cell);
     int cell_population = cell_list.cell_population[cell_ind];
@@ -342,9 +249,6 @@ int move_particle(double del)
 
     int full_index = cell_ind * cell_list.max_population_per_cell + particle_ind;
 
-   
-    //double backup[NDIM]; //backup the position in case the proposed displacement gets rejected
-    //memcpy(backup, r[n], NDIM*sizeof(double));
     particle_t chosen;
     SqMS_copy_particle(&cell_list.cell[full_index],&chosen);
     assert(chosen.isplaceholder == 0);
@@ -352,6 +256,13 @@ int move_particle(double del)
     //double old_energy = particle_energy(n);
 
     double old_energy = SqMS_get_energy_from_pair(chosen.uid,chosen.uid,energy_matrix);
+
+    bounding_box_t sbbox;
+    SqMS_get_rigid_bounding_box(&cell_list,&sbbox,cell_ind);
+
+    double sanity_old_energy = 0;
+    if (SANITY_CHECK == 1) sanity_old_energy = particle_energy_cell_list(&sbbox, &chosen);
+    
 
     for (size_t i = 0; i < NDIM; i++) //propose a particle displacement
     {
@@ -382,33 +293,25 @@ int move_particle(double del)
     }
     
     bounding_box_t bbox;
-    SqMS_get_rigid_bounding_box(&cell_list,&bbox,new_cell_ind);
+    SqMS_get_rigid_bounding_box(&cell_list,&bbox,cell_ind);
 
     //collision detection
     if (collision_detection == YES)
     {
-        
-        /*for(int p=0; p<n_particles;p++)
-        {
-            if(n==p) continue ;
-            
-            if(dist(r[n], r[p]) < diameter)
-            {
-                memcpy(r[n], backup, NDIM*sizeof(double));
-                return 0 ;
-            }
-        }*/
         for (size_t c = 0; c < bbox.num_cells; c++)
         {
             for (size_t pp = 0; pp < cell_list.cell_population[bbox.cell_indices[c]]; pp++)
             {
                 int index = bbox.cell_indices[c] * cell_list.max_population_per_cell + pp;
-                if (chosen.uid != cell_list.cell[index].uid || cell_list.cell[index].isplaceholder == 0)
+                if (chosen.uid != cell_list.cell[index].uid && cell_list.cell[index].isplaceholder == 0)
                 {
-                    if (dist(chosen.r, cell_list.cell[index].r) < chosen.radius + cell_list.cell[index].radius)
+                    double seperation = dist(chosen.r, cell_list.cell[index].r);
+                    double min_seperation = chosen.radius + cell_list.cell[index].radius;
+                    if (seperation < min_seperation)
                     {
                         /* code */
                         SqMS_free_bounding_box(&bbox);
+                        SqMS_free_bounding_box(&sbbox);
                         return 0;
                     }
                     
@@ -424,9 +327,10 @@ int move_particle(double del)
     //double new_energy = particle_energy(n);
     //particle_energy(n);
 
-    particle_energy_cell_list(&bbox, &chosen);
+    double sanity_new_energy = particle_energy_cell_list(&bbox, &chosen);
     double new_energy = SqMS_get_energy_from_pair(chosen.uid,chosen.uid,energy_matrix);
     double dE = new_energy - old_energy;
+    //double dE = sanity_new_energy - sanity_old_energy;
     double rnumber = dsfmt_genrand();
 
     if(dE < 0.0 || rnumber < exp(-beta * dE)){
@@ -434,7 +338,7 @@ int move_particle(double del)
         if (dE < -30)
         {
             
-           // printf("dE is %lf, rnumber is %lf, bfactor is %lf, total energy is %lf\n",dE,rnumber,exp(-beta * dE), total_energy);
+           //printf("dE is %lf, rnumber is %lf, bfactor is %lf, total energy is %lf\n",dE,rnumber,exp(-beta * dE), total_energy);
         }
         total_energy += dE;
         if (cell_ind == new_cell_ind)
@@ -447,6 +351,7 @@ int move_particle(double del)
             SqMS_add_particle_to_cell(&cell_list, &chosen, new_cell_ind);
         }
         SqMS_free_bounding_box(&bbox);
+        SqMS_free_bounding_box(&sbbox);
         return 1;
     }
     else
@@ -455,6 +360,7 @@ int move_particle(double del)
         particle_energy_cell_list(&bbox, &cell_list.cell[full_index]);
         //to update energy matrix THIS CAN BE OPTIMIZED!
         SqMS_free_bounding_box(&bbox);
+        SqMS_free_bounding_box(&sbbox);
         return 0;
     }
 
@@ -585,6 +491,32 @@ void init_positions_hot_cell_list(void)
         
     }
     printf("Hot initialization has ended.\n");
+    if (SANITY_CHECK == 1)
+    {
+        int tot=0;
+        for (size_t i = 0; i < cell_list.num_cell; i++)
+        {
+            tot += cell_list.cell_population[i];
+        }
+        assert(tot == n_particles);
+
+        for (size_t i = 0; i < cell_list.num_cell; i++)
+        {
+            tot = 0;
+            for (size_t j = 0; j < cell_list.cell_population[i]; j++)
+            {
+                if (cell_list.cell[i * cell_list.max_population_per_cell + j].isplaceholder == 0)
+                {
+                    tot++;
+                    assert(SqMS_find_where_particle_belongs(&cell_list, cell_list.cell[i * cell_list.max_population_per_cell + j].r)==i);
+                }
+                
+            }
+            assert(tot == cell_list.cell_population[i]);
+        }
+        
+    }
+    
 }
 
 /* _____________________________________________________________________ */
@@ -607,7 +539,7 @@ int main(int argc, const char * argv[])
 
     for (size_t i = 0; i < NDIM; i++)
     {
-        Box[i] = 4*sqrt(LJ_length_cutoff2);
+        Box[i] = 3*sqrt(LJ_length_cutoff2);
     }
     
 
@@ -636,12 +568,13 @@ int main(int argc, const char * argv[])
     
     SqMS_init_right_cell_list(&cell_list, Box, sqrt(LJ_length_cutoff2), particle_volume);
     //init_positions_hot();
+    assert(cell_list.max_population > n_particles);
     init_positions_hot_cell_list();
     //init_particle_energies();
     init_particle_energies_cell();
     write_data_cell(0);
 
-
+    //total_energy = 0 ;
 
     //write_data(0); //writes initial config
     int accepted = 0;
