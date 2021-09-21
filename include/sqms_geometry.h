@@ -12,7 +12,7 @@
 #ifndef SQMS_GEOMETRY_H
 #define SQMS_GEOMETRY_H
 #ifndef NDIM
-#define NDIM 3
+#define NDIM 2
 #endif
 
 #if defined(__cplusplus)

@@ -22,7 +22,7 @@ double SqMS_truncated_LJ_potential(double seperation_squared, double length_scal
     double energy = 0;
 
     if (seperation_squared < length_cutoff_squared) 
-        energy += SqMS_truncated_LJ_potential_unsafe(seperation_squared, length_scale_squared, energy_scale, energy_cutoff);
+        energy = SqMS_truncated_LJ_potential_unsafe(seperation_squared, length_scale_squared, energy_scale, energy_cutoff);
 
     return energy;
 }
@@ -32,7 +32,7 @@ double SqMS_finite_well_potential(double seperation_squared, double well_depth, 
     double energy = 0;
 
     if (seperation_squared < well_width_squared)
-        energy -= well_depth;
+        energy = -well_depth;
 
     return energy;
 }

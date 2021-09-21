@@ -24,10 +24,9 @@
 /* ------------------------  */
 
 //#define NDIM 2 //number of dimensions
-#define N 51
-#define A_coef 1
-#define B_coef 24
-#define Box_coef 15
+#define N 14
+#define A_coef 2
+#define B_coef 5
 #define NMAX  ((A_coef + B_coef)*N)//max number of particles
 #define ITER_MAX 100000000 //max number of iterations
 #define SANITY_CHECK 1
@@ -36,12 +35,12 @@ const int n_particlesA = A_coef*N; //number of particles
 const int n_particlesB = B_coef*N; //number of particles
 int n_particles; //number of particles
 enum detection{YES, NO};
-const int mc_steps = 50000; //it says steps but they are in fact sweeps
+const int mc_steps = 20000; //it says steps but they are in fact sweeps
 const int NAdjust = mc_steps / 5;
 const int output_steps = 100; //output a file every this many sweeps
 //const double diameter = 1.0; //particle diameter
 double delta = 0.004; //MCMC move delta
-double beta = 5; //inverse temperature
+double beta = 1; //inverse temperature
 const char* init_filename = "coords_step-000001.dat";
 enum detection collision_detection = YES; //detect hard cores
 enum particle_type{A,B};
@@ -54,7 +53,10 @@ const double tolerance = 1e-6;
 /*  Simulation variables  */
 /* ---------------------  */
 
-const double radiusA = 1., radiusB = .345;
+const double radiusA = 1., radiusB = .5;
+double LJ_length_cutoff2AA, LJ_energy_cutoffAA,LJ_length_scale_squaredAA;
+double LJ_length_cutoff2BB, LJ_energy_cutoffBB,LJ_length_scale_squaredBB;
+double LJ_length_cutoff2AB, LJ_energy_cutoffAB,LJ_length_scale_squaredAB;
 double particle_volumeA,particle_volumeB;
 
 double total_energy;
@@ -140,7 +142,31 @@ double dist2(double *particle1, double *particle2)
 
 double pair_potential(double distance_square, double total_radius)
 {
-    return SqMS_finite_well_potential(distance_square, 1., 1.1*1.1*total_radius*total_radius);
+    double length_scale_squared, energy_cutoff,length_cutoff_squared;
+    if (fabs(total_radius - (radiusA + radiusA)) < tolerance)
+    {
+        length_cutoff_squared = LJ_length_cutoff2AA;
+        length_scale_squared = LJ_length_scale_squaredAA;
+        energy_cutoff = LJ_energy_cutoffAA;
+    }
+    else if (fabs(total_radius - (radiusB + radiusB)) < tolerance)
+    {
+        length_cutoff_squared = LJ_length_cutoff2BB;
+        length_scale_squared = LJ_length_scale_squaredBB;
+        energy_cutoff = LJ_energy_cutoffBB;
+    }
+    else if (fabs(total_radius - (radiusA + radiusB)) < tolerance)
+    {
+        length_cutoff_squared = LJ_length_cutoff2AB;
+        length_scale_squared = LJ_length_scale_squaredAB;
+        energy_cutoff = LJ_energy_cutoffAB;
+    }
+    else
+    {
+        printf("I have no memory of this particle pair! -Condalf\n");
+        exit(-1);
+    }
+    return SqMS_truncated_LJ_potential(distance_square, length_scale_squared, 1., length_cutoff_squared, energy_cutoff);
 }
 
 void init_particle_energies_cell(void)
@@ -165,7 +191,6 @@ void init_particle_energies_cell(void)
             }
             p_dist2 = dist2(cell_list.cell[i].r,cell_list.cell[j].r);
             p_energy = pair_potential(p_dist2, cell_list.cell[i].radius+cell_list.cell[j].radius);
-            assert(p_energy <= 0);
             SqMS_set_energy_of_pair(p_energy,cell_list.cell[i].uid,cell_list.cell[j].uid,energy_matrix);
             total_energy += p_energy;
             
@@ -194,7 +219,6 @@ double particle_energy_cell_list(bounding_box_t *bbox, particle_t *particle)
 
             p_dist2 = dist2(particle->r,cell_list.cell[i].r);
             p_energy = pair_potential(p_dist2, cell_list.cell[i].radius+particle->radius);
-            assert(p_energy <= 0);
             SqMS_set_energy_of_pair(p_energy,cell_list.cell[i].uid,particle->uid,energy_matrix);
             t_energy += p_energy;
             
@@ -342,7 +366,7 @@ int move_particle(double del)
 
     if(dE < 0.0 || rnumber < exp(-beta * dE)){
         
-        if (dE > 0)
+        if (dE < -30)
         {
             
            //printf("dE is %lf, rnumber is %lf, bfactor is %lf, total energy is %lf\n",dE,rnumber,exp(-beta * dE), total_energy);
@@ -612,12 +636,24 @@ int main(int argc, const char * argv[])
     assert(delta > 0.0);
     n_particles = n_particlesA + n_particlesB;
     
-    double max_length_cutoff = 1.*2.2*fmax(radiusB,radiusA);
+    LJ_length_scale_squaredAA = 4 * radiusA * radiusA;
+    LJ_length_cutoff2AA = LJ_length_scale_squaredAA*6.25;
+    LJ_energy_cutoffAA = SqMS_LJ_potential(LJ_length_cutoff2AA, LJ_length_scale_squaredAA, 1.);
+
+    LJ_length_scale_squaredBB = 4 * radiusB * radiusB;
+    LJ_length_cutoff2BB = LJ_length_scale_squaredBB*6.25;
+    LJ_energy_cutoffBB = SqMS_LJ_potential(LJ_length_cutoff2BB, LJ_length_scale_squaredBB, 1.);
+
+    LJ_length_scale_squaredAB = (radiusA +radiusB) * (radiusA +radiusB);
+    LJ_length_cutoff2AB = LJ_length_scale_squaredAB*6.25;
+    LJ_energy_cutoffAB = SqMS_LJ_potential(LJ_length_cutoff2AB, LJ_length_scale_squaredAB, 1.);
+    
+    double max_length_cutoff2 = fmax(LJ_length_cutoff2AA,LJ_length_cutoff2BB);
 
 
     for (size_t i = 0; i < NDIM; i++)
     {
-        Box[i] = Box_coef*max_length_cutoff;
+        Box[i] = 3*sqrt(max_length_cutoff2);
     }
     
 
@@ -654,12 +690,12 @@ int main(int argc, const char * argv[])
     dsfmt_seed (314159) ;
     
     
-    SqMS_init_right_cell_list(&cell_list, Box, max_length_cutoff, fmin(particle_volumeB,particle_volumeA));
+    SqMS_init_right_cell_list(&cell_list, Box, sqrt(max_length_cutoff2), fmin(particle_volumeB,particle_volumeA));
     //init_positions_hot();
     assert(cell_list.max_population > n_particles);
 
     find_delta();
-    SqMS_init_right_cell_list(&cell_list, Box, max_length_cutoff, fmin(particle_volumeB,particle_volumeA));
+    SqMS_init_right_cell_list(&cell_list, Box, sqrt(max_length_cutoff2), fmin(particle_volumeB,particle_volumeA));
     init_positions_hot_cell_list();
     //init_particle_energies();
     init_particle_energies_cell();

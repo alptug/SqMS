@@ -24,44 +24,35 @@
 /* ------------------------  */
 
 //#define NDIM 2 //number of dimensions
-#define N 51
-#define A_coef 1
-#define B_coef 24
-#define Box_coef 15
-#define NMAX  ((A_coef + B_coef)*N)//max number of particles
+#define NMAX 80 //max number of particles
 #define ITER_MAX 100000000 //max number of iterations
 #define SANITY_CHECK 1
 
-const int n_particlesA = A_coef*N; //number of particles
-const int n_particlesB = B_coef*N; //number of particles
-int n_particles; //number of particles
+int n_particles = NMAX; //number of particles
 enum detection{YES, NO};
-const int mc_steps = 50000; //it says steps but they are in fact sweeps
-const int NAdjust = mc_steps / 5;
+const int mc_steps = 20000; //it says steps but they are in fact sweeps
 const int output_steps = 100; //output a file every this many sweeps
-//const double diameter = 1.0; //particle diameter
+const double diameter = 1.0; //particle diameter
 double delta = 0.004; //MCMC move delta
-double beta = 5; //inverse temperature
+double beta = 10; //inverse temperature
 const char* init_filename = "coords_step-000001.dat";
-enum detection collision_detection = YES; //detect hard cores
-enum particle_type{A,B};
+enum detection collision_detection = NO; //detect hard cores
+
 right_cell_list_t cell_list;
 
 const double eps = 1e-1;
-const double tolerance = 1e-6;
 
 /* ---------------------  */
 /*  Simulation variables  */
 /* ---------------------  */
 
-const double radiusA = 1., radiusB = .345;
-double particle_volumeA,particle_volumeB;
+
+double radius, LJ_length_cutoff2, LJ_energy_cutoff,LJ_length_scale_squared;
+double particle_volume;
 
 double total_energy;
 double energy_matrix[ (NMAX * (NMAX + 1))/2 ];
 double Box[NDIM];
-
-
 
 /* ---------------------------------  */
 /*  FILE READER & WRITER SUBROUTINES  */
@@ -138,9 +129,9 @@ double dist2(double *particle1, double *particle2)
 /*       energy functions       */
 /* ---------------------------  */
 
-double pair_potential(double distance_square, double total_radius)
+double pair_potential(double distance_square)
 {
-    return SqMS_finite_well_potential(distance_square, 1., 1.1*1.1*total_radius*total_radius);
+    return SqMS_truncated_LJ_potential_unsafe(distance_square, LJ_length_scale_squared, 1., LJ_energy_cutoff);
 }
 
 void init_particle_energies_cell(void)
@@ -164,11 +155,12 @@ void init_particle_energies_cell(void)
                 continue;
             }
             p_dist2 = dist2(cell_list.cell[i].r,cell_list.cell[j].r);
-            p_energy = pair_potential(p_dist2, cell_list.cell[i].radius+cell_list.cell[j].radius);
-            assert(p_energy <= 0);
-            SqMS_set_energy_of_pair(p_energy,cell_list.cell[i].uid,cell_list.cell[j].uid,energy_matrix);
-            total_energy += p_energy;
-            
+            if (p_dist2 < LJ_length_cutoff2)
+            {
+                p_energy = pair_potential(p_dist2);
+                SqMS_set_energy_of_pair(p_energy,cell_list.cell[i].uid,cell_list.cell[j].uid,energy_matrix);
+                total_energy += p_energy;
+            }
         }
     }
 }
@@ -193,11 +185,12 @@ double particle_energy_cell_list(bounding_box_t *bbox, particle_t *particle)
             if (cell_list.cell[i].isplaceholder == 1 || cell_list.cell[i].uid == particle->uid) continue;
 
             p_dist2 = dist2(particle->r,cell_list.cell[i].r);
-            p_energy = pair_potential(p_dist2, cell_list.cell[i].radius+particle->radius);
-            assert(p_energy <= 0);
-            SqMS_set_energy_of_pair(p_energy,cell_list.cell[i].uid,particle->uid,energy_matrix);
-            t_energy += p_energy;
-            
+            if (p_dist2 < LJ_length_cutoff2)
+            {
+                p_energy = pair_potential(p_dist2);
+                SqMS_set_energy_of_pair(p_energy,cell_list.cell[i].uid,particle->uid,energy_matrix);
+                t_energy += p_energy;
+            }
         }
         
     }
@@ -342,7 +335,7 @@ int move_particle(double del)
 
     if(dE < 0.0 || rnumber < exp(-beta * dE)){
         
-        if (dE > 0)
+        if (dE < -30)
         {
             
            //printf("dE is %lf, rnumber is %lf, bfactor is %lf, total energy is %lf\n",dE,rnumber,exp(-beta * dE), total_energy);
@@ -378,37 +371,82 @@ int move_particle(double del)
 /* --------------------------------------------------------------------- */
 /*      EXPERIMENT FUNCTIONS --> Run MCMC for particular objectives      */
 /* --------------------------------------------------------------------- */
+/*
+double MCsim(double del)
+{
+    int accepted = 0;
+    int step, n;
+    for(step = 0; step < mc_steps; ++step)
+    {
+        for(n = 0; n < n_particles; ++n)
+        {
+            accepted += move_particle(del);
+        }
+        if(step % output_steps == 0){
+            printf("Step %d. Move acceptance: %lf, total energy: %lf.\n",
+            step, (double)accepted / (n_particles * output_steps), total_energy);
+            accepted = 0;
+            write_data(step);
+        }
+    }
+    double acceptance = (double)accepted / (n_particles * mc_steps);
+    printf("MC complete. Move acceptance: %lf.\n", acceptance);
+    return acceptance;
+}
+*/
+/*void init_positions_hot(void)
+{
+    printf("Hot initialization has started.\n");
+    for (size_t i = 0; i < n_particles; i++)
+    {
+        // particle loop
+        int is_collided = 0;
+        size_t iter = 0;
+
+        for (iter = 0; iter < ITER_MAX; iter++)
+        {
+            for (size_t d = 0; d < NDIM; d++)
+            {
+                // dimension loop 
+                r[i][d]= Box[d] * dsfmt_genrand();
+            }
+            if (collision_detection == YES)
+            {
+                // if particles have hard cores initialize accordingly 
+                is_collided = 0;
+                for (size_t j = 0; j < i; j++)
+                {
+                    if(dist(r[i], r[j]) < diameter)
+                    {
+                        is_collided = 1;
+                        break;
+                    }
+                }
+            }
+            if (is_collided == 0) break;
+            
+            
+        }
+        if (iter == ITER_MAX)
+        {
+            printf("Max iterations has been reached!\n");
+            exit(-1);
+        }
+        
+    }
+    printf("Hot initialization has ended.\n");
+}*/
 
 void init_positions_hot_cell_list(void)
 {
     printf("Hot initialization has started.\n");
     double rr[NDIM];
-    size_t placed_A = 0, placed_B=0;
-    enum particle_type type;
     for (size_t i = 0; i < n_particles; i++)
     {
         /* particle loop */
         int is_collided = 0;
-        double radius = 0;
-        if (placed_A < n_particlesA)
-        {
-            radius = radiusA;
-            type = A;
-        }
-        else if (placed_B < n_particlesB)
-        {
-            radius = radiusB;
-            type = B ;
-        }
-        else
-        {
-            printf("something is wrong with particle numbers!\n");
-            exit(-1);
-        }
-        
-        
-
         size_t iter = 0;
+        
 
         for (iter = 0; iter < ITER_MAX; iter++)
         {
@@ -423,7 +461,7 @@ void init_positions_hot_cell_list(void)
                 is_collided = 0;
                 for (size_t j = 0; j < cell_list.max_population; j++)
                 {
-                    if(cell_list.cell[j].isplaceholder==0 && dist(rr, cell_list.cell[j].r) < radius + cell_list.cell[j].radius)
+                    if(cell_list.cell[j].isplaceholder==0 && dist(rr, cell_list.cell[j].r) < diameter)
                     {
                         is_collided = 1;
                         break;
@@ -443,27 +481,13 @@ void init_positions_hot_cell_list(void)
         int cell_index = SqMS_find_where_particle_belongs(&cell_list, rr);
         particle_t new_particle;
         new_particle.isplaceholder = 0;
-        new_particle.radius = radius;
+        new_particle.radius = diameter/2.;
         new_particle.uid = i;
         for (size_t k = 0; k < NDIM; k++)
         {
             new_particle.r[k] = rr[k];
         }
         SqMS_add_particle_to_cell(&cell_list,&new_particle,cell_index);
-        if (type == A)
-        {
-            placed_A++;
-        }
-        else if (type == B)
-        {
-            placed_B++;
-        }
-        else
-        {
-            printf("something is wrong with particle types!\n");
-            exit(-1);
-        }
-        
         
     }
     printf("Hot initialization has ended.\n");
@@ -495,111 +519,6 @@ void init_positions_hot_cell_list(void)
     
 }
 
-double DeltaAdjuster(double DD, double acceptance, double target)
-{
-    double newDelta = DD;
-    double A = -log(3)/log(target);
-    double scale = 1.5 * pow(acceptance, A) + 0.5;
-    newDelta *= scale;
-    double minl = 0;
-    if (NDIM == 1)
-    {
-        minl = Box[0];
-    }
-    else if (NDIM > 1)
-    {
-        minl = Box[0];
-        for (size_t i = 0; i < NDIM; i++)
-        {
-            if (Box[i] < minl)
-            {
-                minl = Box[i];
-            }
-            
-        }
-    }
-    else
-    {
-        printf("Something is wring with NDIM!\n");
-        exit(-1);
-    }
-    newDelta = fmod(newDelta, minl);
-//    printf("Move Acceptence is %lf. Delta is rescaled by %lf\n",acceptance,scale);
-    
-    return newDelta;
-}
-
-
-void find_delta()
-{
-    printf("Adjusting Delta:\n");
-    double acceptance=0, mean_acc=0, mean2_acc=0;
-    init_positions_hot_cell_list();
-    init_particle_energies_cell();
-    
-    int count = 5;
-    double tol = 0.02;
-    double target = 0.6;
-
-    double arr_acc[count];
-    int accepted = 0, step;
-
-    for(step = 0; step <= (count-1)*output_steps; ++step){
-        for(int n = 0; n < n_particles; ++n){
-            accepted += move_particle(delta);
-        }
-        if(step % output_steps == 0)
-        {
-            acceptance = (double)accepted / (n_particles * output_steps);
-            arr_acc[step / output_steps] = acceptance;
-            delta = DeltaAdjuster(delta, acceptance, target);
-            accepted = 0;
-        }
-    }
-
-    for(step = 0; step <= NAdjust; ++step){
-        for(int n = 0; n < n_particles; ++n){
-            accepted += move_particle(delta);
-        }
-        if(step % output_steps == 0 && step != 0)
-        {
-            acceptance = (double)accepted / (n_particles * output_steps);
-            arr_acc[(step/output_steps)%count] = acceptance;
-            printf("Trial Step %d. Move acceptance: %f.\n",
-                step / output_steps, acceptance
-            );
-            mean_acc = 0;
-            mean2_acc = 0;
-            for (size_t ii = 0; ii < count; ii++)
-            {
-                mean_acc += arr_acc[ii];
-                mean2_acc += arr_acc[ii]*arr_acc[ii];
-            }
-            mean_acc /= count;
-            mean2_acc /= count;
-            double variance = mean2_acc - mean_acc * mean_acc;
-
-            if (fabs(target-mean_acc)<tol && sqrt(variance) < tol)
-            {
-                printf("Delta found! Delta = %lf,mean acceptance: %lf, variance: %lf.\n\nStarting MC Simulation.\n",delta, mean_acc, variance);
-                printf("----------------------------------------\n");
-                break;
-            }
-            else
-            {
-                delta = DeltaAdjuster(delta, acceptance, target);
-            }
-            accepted = 0;
-        }
-    }
-    if (step == NAdjust+1)
-    {
-        printf("Acceptence(%lf) could not be found in the desired interval!\n Delta = %lf.\n\nStarting MC Simulation.\n",acceptance,delta);
-        printf("----------------------------------------\n");
-    }
-    
-}
-
 /* _____________________________________________________________________ */
 /* _____________________________________________________________________ */
 /* _____________________________________________________________________ */
@@ -607,34 +526,27 @@ void find_delta()
 
 int main(int argc, const char * argv[])
 {
-    assert(radiusA > 0.0);
-    assert(radiusB > 0.0);
+    assert(diameter > 0.0);
     assert(delta > 0.0);
-    n_particles = n_particlesA + n_particlesB;
     
-    double max_length_cutoff = 1.*2.2*fmax(radiusB,radiusA);
+    radius = 0.5 * diameter;
+    LJ_length_scale_squared = diameter*diameter;
+    LJ_length_cutoff2 = LJ_length_scale_squared*6.25;
+    LJ_energy_cutoff = SqMS_LJ_potential(LJ_length_cutoff2, LJ_length_scale_squared, 1.);
+    
+    
 
 
     for (size_t i = 0; i < NDIM; i++)
     {
-        Box[i] = Box_coef*max_length_cutoff;
+        Box[i] = 3*sqrt(LJ_length_cutoff2);
     }
     
 
-    if(NDIM == 3) 
-    {
-        particle_volumeA = 4. * M_PI * pow(radiusA, 3.0) / 3.0;
-        particle_volumeB = 4. * M_PI * pow(radiusB, 3.0) / 3.0;
-    }
-    else if(NDIM == 2)
-    {
-        particle_volumeA = M_PI * pow(radiusA, 2.0);
-        particle_volumeB = M_PI * pow(radiusB, 2.0);
-    }
-    else
-    {
-        particle_volumeA = pow(M_PI,(double) NDIM/2.) * pow(radiusA, NDIM) / tgamma(1.+(double) NDIM/2.);
-        particle_volumeB = pow(M_PI,(double) NDIM/2.) * pow(radiusB, NDIM) / tgamma(1.+(double) NDIM/2.);
+    if(NDIM == 3) particle_volume = M_PI * pow(diameter, 3.0) / 6.0;
+    else if(NDIM == 2) particle_volume = M_PI * pow(radius, 2.0);
+    else{
+        particle_volume = pow(M_PI,(double) NDIM/2.) * pow(radius, NDIM) / tgamma(1.+(double) NDIM/2.);
     }
     if (collision_detection == YES)
     {
@@ -643,7 +555,7 @@ int main(int argc, const char * argv[])
         {
             box_volume *= Box[i];
         }
-        assert(box_volume > particle_volumeA*n_particlesA + particle_volumeB*n_particlesB);
+        assert(box_volume > particle_volume*n_particles);
     }
     
     
@@ -654,12 +566,9 @@ int main(int argc, const char * argv[])
     dsfmt_seed (314159) ;
     
     
-    SqMS_init_right_cell_list(&cell_list, Box, max_length_cutoff, fmin(particle_volumeB,particle_volumeA));
+    SqMS_init_right_cell_list(&cell_list, Box, sqrt(LJ_length_cutoff2), particle_volume);
     //init_positions_hot();
     assert(cell_list.max_population > n_particles);
-
-    find_delta();
-    SqMS_init_right_cell_list(&cell_list, Box, max_length_cutoff, fmin(particle_volumeB,particle_volumeA));
     init_positions_hot_cell_list();
     //init_particle_energies();
     init_particle_energies_cell();
