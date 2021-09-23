@@ -70,3 +70,50 @@ int powi(int base, unsigned int exp){
         return base*temp*temp;
 
 }
+
+
+
+double SqMS_determinant(double *matrix, int dimension)
+{
+    double det = 0;
+
+    if (dimension == 1)
+    {
+        det = matrix[0];
+    }
+    else if (dimension == 2)
+    {
+        det = matrix[0]*matrix[3] - matrix[1]*matrix[2];
+    }
+    else if (dimension == 3)
+    {
+    /*
+     * Used as a temporary variables to make calculation easy
+     * |         |
+     * | a  b  c |
+     * | d  e  f |
+     * | g  h  i |
+     * |         |
+     */
+        double a = matrix[0];
+        double b = matrix[1];
+        double c = matrix[3];
+        double d = matrix[4];
+        double e = matrix[5];
+        double f = matrix[6];
+        double g = matrix[7];
+        double h = matrix[8];
+        double i = matrix[9];
+
+        /*
+        * det(matrix) = a(ei - fh) - b(di - fg) + c(dh - eg)
+        */
+        det = (a*(e*i - f*h)) - (b*(d*i - f*g)) + (c*(d*h - e*g));
+    }
+    else
+    {
+        printf("Matrix dimension is not supported yet!\n");
+        exit(-1);
+    }
+    return det;
+}

@@ -13,6 +13,7 @@
 #include "../include/sqms_geometry.h"
 #include "../include/sqms_pair_potentials.h"
 #include "../include/sqms_pair_energy_matrix.h"
+#include "../include/sqms_misc.h"
 //#include <mt19937.h>
 
 #ifndef M_PI
@@ -24,10 +25,10 @@
 /* ------------------------  */
 
 //#define NDIM 2 //number of dimensions
-#define N 51
+#define N 1
 #define A_coef 1
 #define B_coef 24
-#define Box_coef 15
+#define Box_coef 3
 #define NMAX  ((A_coef + B_coef)*N)//max number of particles
 #define ITER_MAX 100000000 //max number of iterations
 #define SANITY_CHECK 1
@@ -36,7 +37,7 @@ const int n_particlesA = A_coef*N; //number of particles
 const int n_particlesB = B_coef*N; //number of particles
 int n_particles; //number of particles
 enum detection{YES, NO};
-const int mc_steps = 50000; //it says steps but they are in fact sweeps
+const int mc_steps = 10000; //it says steps but they are in fact sweeps
 const int NAdjust = mc_steps / 5;
 const int output_steps = 100; //output a file every this many sweeps
 //const double diameter = 1.0; //particle diameter
@@ -45,7 +46,7 @@ double beta = 5; //inverse temperature
 const char* init_filename = "coords_step-000001.dat";
 enum detection collision_detection = YES; //detect hard cores
 enum particle_type{A,B};
-right_cell_list_t cell_list;
+cell_list_t cell_list;
 
 const double eps = 1e-1;
 const double tolerance = 1e-6;
@@ -59,9 +60,11 @@ double particle_volumeA,particle_volumeB;
 
 double total_energy;
 double energy_matrix[ (NMAX * (NMAX + 1))/2 ];
-double Box[NDIM];
+double floppyBox[NDIM*NDIM];
 
-
+int n_bounding_cells;
+int *bounding_coordinates, *bounding_shape;
+interaction_shape_t int_shape;
 
 /* ---------------------------------  */
 /*  FILE READER & WRITER SUBROUTINES  */
@@ -99,7 +102,7 @@ void write_data_cell(int step){
     int d, n;
     fprintf(fp, "%d\n", n_particles);
     for(d = 0; d < NDIM; ++d){
-        fprintf(fp, "%lf %lf\n",0.0,Box[d]);
+        fprintf(fp, "%lf %lf\n",0.0,1);
     }
     if (NDIM == 2) fprintf(fp, "%lf %lf\n",0.0,1.0);
 
@@ -125,13 +128,13 @@ void write_data_cell(int step){
 double dist(double *particle1, double *particle2)
 {
     //dimension agnostic pbc distance
-    return SqMS_distance_rectangular_PBC(particle1, particle2, Box, NDIM);
+    return SqMS_distance_floppy_PBC(particle1, particle2, floppyBox, NDIM);
 }
 
 double dist2(double *particle1, double *particle2)
 {
     //dimension agnostic pbc distance
-    return SqMS_distance_squared_rectangular_PBC(particle1, particle2, Box, NDIM);
+    return SqMS_distance_squared_floppy_PBC(particle1, particle2, floppyBox, NDIM);
 }
 
 /* ___________________________  */
@@ -265,7 +268,7 @@ int move_particle(double del)
     double old_energy = SqMS_get_energy_from_pair(chosen.uid,chosen.uid,energy_matrix);
 
     bounding_box_t sbbox;
-    SqMS_get_rigid_bounding_box(&cell_list,&sbbox,cell_ind);
+    SqMS_get_floppy_bounding_shape(&cell_list,&sbbox,cell_ind,bounding_coordinates,n_bounding_cells);
 
     double sanity_old_energy = 0;
     if (SANITY_CHECK == 1) sanity_old_energy = particle_energy_cell_list(&sbbox, &chosen);
@@ -279,14 +282,14 @@ int move_particle(double del)
     //PBC
     for(int j=0;j<NDIM;j++)
     {
-        if(chosen.r[j] > Box[j])
+        if(chosen.r[j] > 1)
         {
-            chosen.r[j] -= Box[j] ;
+            chosen.r[j] -= 1;
         }
         
         if(chosen.r[j] < 0)
         {
-            chosen.r[j] += Box[j] ;
+            chosen.r[j] += 1 ;
         }
     }
     int new_cell_ind;
@@ -300,7 +303,7 @@ int move_particle(double del)
     }
     
     bounding_box_t bbox;
-    SqMS_get_rigid_bounding_box(&cell_list,&bbox,cell_ind);
+    SqMS_get_floppy_bounding_shape(&cell_list,&bbox,cell_ind,bounding_coordinates,n_bounding_cells);
 
     //collision detection
     if (collision_detection == YES)
@@ -354,7 +357,7 @@ int move_particle(double del)
         }
         else
         {
-            SqMS_remove_particle_from_right_cell_list(&cell_list,cell_ind,particle_ind);
+            SqMS_remove_particle_from_cell_list(&cell_list,cell_ind,particle_ind);
             SqMS_add_particle_to_cell(&cell_list, &chosen, new_cell_ind);
         }
         SqMS_free_bounding_box(&bbox);
@@ -415,7 +418,7 @@ void init_positions_hot_cell_list(void)
             for (size_t d = 0; d < NDIM; d++)
             {
                 /* dimension loop */
-                rr[d]= Box[d] * dsfmt_genrand();
+                rr[d]= dsfmt_genrand();
             }
             if (collision_detection == YES)
             {
@@ -502,28 +505,7 @@ double DeltaAdjuster(double DD, double acceptance, double target)
     double scale = 1.5 * pow(acceptance, A) + 0.5;
     newDelta *= scale;
     double minl = 0;
-    if (NDIM == 1)
-    {
-        minl = Box[0];
-    }
-    else if (NDIM > 1)
-    {
-        minl = Box[0];
-        for (size_t i = 0; i < NDIM; i++)
-        {
-            if (Box[i] < minl)
-            {
-                minl = Box[i];
-            }
-            
-        }
-    }
-    else
-    {
-        printf("Something is wring with NDIM!\n");
-        exit(-1);
-    }
-    newDelta = fmod(newDelta, minl);
+    newDelta = fmod(newDelta, 1.);
 //    printf("Move Acceptence is %lf. Delta is rescaled by %lf\n",acceptance,scale);
     
     return newDelta;
@@ -614,10 +596,13 @@ int main(int argc, const char * argv[])
     
     double max_length_cutoff = 1.*2.2*fmax(radiusB,radiusA);
 
-
+    for (size_t i = 0; i < NDIM*NDIM; i++)
+    {
+        floppyBox[NDIM*i+i] = 0;
+    }
     for (size_t i = 0; i < NDIM; i++)
     {
-        Box[i] = Box_coef*max_length_cutoff;
+        floppyBox[NDIM*i+i] = Box_coef*max_length_cutoff;
     }
     
 
@@ -638,11 +623,7 @@ int main(int argc, const char * argv[])
     }
     if (collision_detection == YES)
     {
-        double box_volume = 1;
-        for (size_t i = 0; i < NDIM; i++)
-        {
-            box_volume *= Box[i];
-        }
+        double box_volume = SqMS_determinant(floppyBox, NDIM);
         assert(box_volume > particle_volumeA*n_particlesA + particle_volumeB*n_particlesB);
     }
     
@@ -654,12 +635,19 @@ int main(int argc, const char * argv[])
     dsfmt_seed (314159) ;
     
     
-    SqMS_init_right_cell_list(&cell_list, Box, max_length_cutoff, fmin(particle_volumeB,particle_volumeA));
+    SqMS_init_floppy_cell_list(&cell_list, floppyBox, max_length_cutoff, fmin(particle_volumeB,particle_volumeA));
+
     //init_positions_hot();
     assert(cell_list.max_population > n_particles);
+    
+    SqMS_get_interaction_shape(&int_shape,&cell_list,max_length_cutoff,floppyBox);
+    SqMS_interaction_shape_to_bounding_shape(&int_shape, &bounding_shape);
+    n_bounding_cells = SqMS_bounding_shape_to_bounding_coordinates(bounding_shape,int_shape.height+1,int_shape.width+1,bounding_coordinates);
+    SqMS_free_interaction_shape(&int_shape);
+    free(bounding_shape);
 
     find_delta();
-    SqMS_init_right_cell_list(&cell_list, Box, max_length_cutoff, fmin(particle_volumeB,particle_volumeA));
+    SqMS_init_floppy_cell_list(&cell_list, floppyBox, max_length_cutoff, fmin(particle_volumeB,particle_volumeA));
     init_positions_hot_cell_list();
     //init_particle_energies();
     init_particle_energies_cell();
@@ -668,6 +656,8 @@ int main(int argc, const char * argv[])
     //total_energy = 0 ;
 
     //write_data(0); //writes initial config
+
+    
     int accepted = 0;
     int step, n;
     for(step = 1; step < mc_steps+1; ++step){

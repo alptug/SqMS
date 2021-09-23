@@ -45,7 +45,7 @@ double beta = 5; //inverse temperature
 const char* init_filename = "coords_step-000001.dat";
 enum detection collision_detection = YES; //detect hard cores
 enum particle_type{A,B};
-right_cell_list_t cell_list;
+cell_list_t cell_list;
 
 const double eps = 1e-1;
 const double tolerance = 1e-6;
@@ -354,7 +354,7 @@ int move_particle(double del)
         }
         else
         {
-            SqMS_remove_particle_from_right_cell_list(&cell_list,cell_ind,particle_ind);
+            SqMS_remove_particle_from_cell_list(&cell_list,cell_ind,particle_ind);
             SqMS_add_particle_to_cell(&cell_list, &chosen, new_cell_ind);
         }
         SqMS_free_bounding_box(&bbox);

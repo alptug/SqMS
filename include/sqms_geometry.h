@@ -45,7 +45,7 @@ typedef struct
 void SqMS_copy_particle(const particle_t* source, particle_t* destitanion);
 
 /**
- * @brief type definition of right angled cell list
+ * @brief type definition of cell list
  *
  * @param cell cells of the cell list that store the particles
  * @param dimensions dimensions of each cell
@@ -59,8 +59,14 @@ void SqMS_copy_particle(const particle_t* source, particle_t* destitanion);
 typedef struct 
 {
   int *cell_indices;
-  int num_cells
+  int num_cells;
 } bounding_box_t;
+
+typedef struct 
+{
+  int *shape;
+  int height,width;
+} interaction_shape_t;
 
 typedef struct
 {
@@ -73,7 +79,7 @@ typedef struct
     int max_population;
     int max_population_per_cell;
     int num_cell;
-} right_cell_list_t;
+} cell_list_t;
 
 
 
@@ -85,11 +91,11 @@ typedef struct
  * @param Box the simulation box to be tesselated by the cells
  * @param cutoff_distance the cutoff distance of the pair potential
  */
-void SqMS_init_right_cell_list(right_cell_list_t* cell_list, const double* Box,
+void SqMS_init_right_cell_list(cell_list_t* cell_list, const double* Box,
                                                 const double cutoff_distance,
                                                 const double particle_volume);
 
-void SqMS_free_right_cell_list(right_cell_list_t* cell_list);
+void SqMS_free_cell_list(cell_list_t* cell_list);
 /**
  * @brief remove particle from the cell
  *
@@ -97,7 +103,7 @@ void SqMS_free_right_cell_list(right_cell_list_t* cell_list);
  * @param cell_id
  * @param particle_id
  */
-void SqMS_remove_particle_from_right_cell_list(right_cell_list_t* cell_list,
+void SqMS_remove_particle_from_cell_list(cell_list_t* cell_list,
                                     const int cell_id, const int particle_id);
  /**
   * @brief add particle to the cell
@@ -107,7 +113,7 @@ void SqMS_remove_particle_from_right_cell_list(right_cell_list_t* cell_list,
   * @param particle
   * @return int particle id in the cell
   */
-int SqMS_add_particle_to_cell(right_cell_list_t* cell_list,
+int SqMS_add_particle_to_cell(cell_list_t* cell_list,
                                 const particle_t* particle, const int cell_id);
  /**
   * @brief find the suitable cell for the particle
@@ -116,7 +122,7 @@ int SqMS_add_particle_to_cell(right_cell_list_t* cell_list,
   * @param r
   * @return int cell id of the particle
   */
-int SqMS_find_where_particle_belongs(right_cell_list_t* cell_list, double *r);
+int SqMS_find_where_particle_belongs(cell_list_t* cell_list, double *r);
 
 /**
  * @brief is the particle supposed to be in that cell
@@ -126,13 +132,13 @@ int SqMS_find_where_particle_belongs(right_cell_list_t* cell_list, double *r);
  * @param cell_id
  * @return int Yes/No
  */
-int SqMS_is_particle_in_cell(right_cell_list_t* cell_list,
+int SqMS_is_particle_in_cell(cell_list_t* cell_list,
                                 const double *r, const int cell_id);
 
 
-void SqMS_cell_id_to_position(right_cell_list_t* cell_list, const int cell_id, int cell_position[]);
-int SqMS_cell_position_to_id(right_cell_list_t* cell_list, int cell_position[]);
-void SqMS_get_rigid_bounding_box(right_cell_list_t *cell_list, bounding_box_t* bbox, const int cell_ind);
+void SqMS_cell_id_to_position(cell_list_t* cell_list, const int cell_id, int cell_position[]);
+int SqMS_cell_position_to_id(cell_list_t* cell_list, int cell_position[]);
+void SqMS_get_rigid_bounding_box(cell_list_t *cell_list, bounding_box_t* bbox, const int cell_ind);
 void SqMS_free_bounding_box(bounding_box_t* bbox);
 //==============================================================================
 /**
@@ -144,7 +150,8 @@ void SqMS_free_bounding_box(bounding_box_t* bbox);
  * @param num_dimensions number of dimensions
  * @return (double) the distance squared between particles
  */
-double SqMS_distance_squared_rectangular_PBC(double *particle1, double *particle2 , double *Box, int num_dimensions);
+double SqMS_distance_squared_rectangular_PBC(double *particle1, 
+                            double *particle2 , double *Box, int num_dimensions);
 
 /**
  * @brief the distance between two points on a flat torus of N dimensions
@@ -155,11 +162,73 @@ double SqMS_distance_squared_rectangular_PBC(double *particle1, double *particle
  * @param num_dimensions number of dimensions
  * @return (double) the distance between particles
  */
-double SqMS_distance_rectangular_PBC(double *particle1, double *particle2 , double *Box, int num_dimensions);
+double SqMS_distance_rectangular_PBC(double *particle1, double *particle2, 
+                                                double *Box, int num_dimensions);
+
+//==============================================================================
+// IT IS TIME TO DO FLOPPY STUFF
+//==============================================================================
 
 
+/**
+ * @brief distance squared between two points on a flat torus of N dimensions in fractional coordinates
+ *
+ * @param particle1 the fractional coordinats of the particle
+ * @param particle2 the fractional coordinates of the particle
+ * @param floppyBox the basis of the parallelepiped the systrem lives in 
+ * @param num_dimensions number of dimensions
+ * @return (double) the distance squared between particles
+ */
+double SqMS_distance_squared_floppy_PBC(double *particle1, double *particle2, 
+                                          double *floppyBox, int num_dimensions);
 
+/**
+ * @brief the distance between two points on a flat torus of N dimensions in fractional coordinates
+ *
+ * @param particle1 the fractional coordinats of the particle
+ * @param particle2 the fractional coordinates of the particle
+ * @param floppyBox the basis of the parallelepiped the systrem lives in 
+ * @param num_dimensions number of dimensions
+ * @return (double) the distance between particles
+ */
+double SqMS_distance_floppy_PBC(double *particle1, double *particle2, 
+                                          double *floppyBox, int num_dimensions);
 
+/**
+ * @brief The initializer of a floppy cell list
+ *
+ * @param cell_list the pointer to the cell list that is going to be initialized
+ * @param Box the simulation box to be tesselated by the cells
+ * @param cutoff_distance the cutoff distance of the pair potential
+ */
+void SqMS_init_floppy_cell_list(cell_list_t* cell_list, const double* floppyBox,
+                                                const double cutoff_distance,
+                                                const double particle_volume);
+
+void SqMS_get_ellipse_vertical_intersects(double* v_intersects, double x, 
+                                        double cutoff_length, double* floppyBox);
+
+void SqMS_get_ellipse_horizontal_intersects(double* h_intersects, double y, 
+                                        double cutoff_length, double* floppyBox);
+
+int SqMS_is_point_in_ellipse(double x, double y, double cutoff_length, 
+                                                            double* floppyBox);
+
+void SqMS_get_interaction_shape(interaction_shape_t* bound, 
+                cell_list_t *cell_list, double cutoff_length, double* floppyBox);
+
+//void SqMS_get_floppy_bounding_box(cell_list_t *cell_list, bounding_box_t* bbox, 
+//                                                            const int cell_ind);
+
+void SqMS_free_interaction_shape(interaction_shape_t* x);
+
+int SqMS_bounding_shape_to_bounding_coordinates(int *bounding_shape, int height,
+                                          int width, int* bounding_coordinates);
+
+void SqMS_get_floppy_bounding_shape(cell_list_t *cell_list, bounding_box_t* bbox, 
+        const int cell_ind, int* bounding_coordinates, int bounding_cell_count);
+
+void SqMS_interaction_shape_to_bounding_shape(interaction_shape_t* int_shape, int **bounding_shape);
 #if defined(__cplusplus)
 }
 #endif

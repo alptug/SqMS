@@ -11,6 +11,8 @@ int SqMS_biggest_lower_bound(const double arr[], const int n, const double x);
 
 int powi(int base, unsigned int exp);
 
+double SqMS_determinant(double *matrix, int dimension);
+
 #if defined(__cplusplus)
 }
 #endif
