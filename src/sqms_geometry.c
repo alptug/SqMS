@@ -462,7 +462,7 @@ void SqMS_get_interaction_shape(interaction_shape_t* bound,
         for (size_t j = 0; j < width; j++)
         {
             
-            double vline = cell_list->dimensions[0] * (j - width/2);
+            double vline = cell_list->dimensions[0] * ((double)j - (double)width/2.);
             double hline = cell_list->dimensions[1] * (height/2 -1 - i);
 
             if (vline < 0)
@@ -545,17 +545,21 @@ void SqMS_interaction_shape_to_bounding_shape(interaction_shape_t* int_shape, in
 
     for (size_t i = 0; i < bounding_shape_size; i++)
     {
-        bounding_shape[i] = 0;
+        (*bounding_shape)[i] = 0;
     }
 
     for (size_t i = 0; i < int_shape->height; i++)
     {
         for (size_t j = 0; j < int_shape->width; j++)
         {
-            bounding_shape[(i)*(int_shape->width+1) + (j)] = (bounding_shape[(i)*(int_shape->width+1) + (j)] + int_shape->shape[(i)*(int_shape->width) + (j)])>0;
-            bounding_shape[(i)*(int_shape->width+1) + (j+1)] = (bounding_shape[(i)*(int_shape->width+1) + (j+1)] + int_shape->shape[(i)*(int_shape->width) + (j)])>0;
-            bounding_shape[(i+1)*(int_shape->width+1) + (j)] = (bounding_shape[(i+1)*(int_shape->width+1) + (j)] + int_shape->shape[(i)*(int_shape->width) + (j)])>0;
-            bounding_shape[(i+1)*(int_shape->width+1) + (j+1)] = (bounding_shape[(i+1)*(int_shape->width+1) + (j+1)] + int_shape->shape[(i)*(int_shape->width) + (j)])>0;
+            int index = (i)*(int_shape->width+1) + (j);
+            (*bounding_shape)[index] = ((*bounding_shape)[index] + int_shape->shape[(i)*(int_shape->width) + (j)])>0;
+            index = (i)*(int_shape->width+1) + (j+1);
+            (*bounding_shape)[index] = ((*bounding_shape)[index] + int_shape->shape[(i)*(int_shape->width) + (j)])>0;
+            index = (i+1)*(int_shape->width+1) + (j);
+            (*bounding_shape)[index] = ((*bounding_shape)[index] + int_shape->shape[(i)*(int_shape->width) + (j)])>0;
+            index = (i+1)*(int_shape->width+1) + (j+1);
+            (*bounding_shape)[index] = ((*bounding_shape)[index] + int_shape->shape[(i)*(int_shape->width) + (j)])>0;
         }
     }
 }

@@ -25,10 +25,10 @@
 /* ------------------------  */
 
 //#define NDIM 2 //number of dimensions
-#define N 1
+#define N 15
 #define A_coef 1
 #define B_coef 24
-#define Box_coef 3
+#define Box_coef 10
 #define NMAX  ((A_coef + B_coef)*N)//max number of particles
 #define ITER_MAX 100000000 //max number of iterations
 #define SANITY_CHECK 1
@@ -37,7 +37,7 @@ const int n_particlesA = A_coef*N; //number of particles
 const int n_particlesB = B_coef*N; //number of particles
 int n_particles; //number of particles
 enum detection{YES, NO};
-const int mc_steps = 10000; //it says steps but they are in fact sweeps
+const int mc_steps = 20000; //it says steps but they are in fact sweeps
 const int NAdjust = mc_steps / 5;
 const int output_steps = 100; //output a file every this many sweeps
 //const double diameter = 1.0; //particle diameter
@@ -56,7 +56,7 @@ const double tolerance = 1e-6;
 /* ---------------------  */
 
 const double radiusA = 1., radiusB = .345;
-double particle_volumeA,particle_volumeB;
+double particle_volumeA,particle_volumeB,max_length_cutoff;
 
 double total_energy;
 double energy_matrix[ (NMAX * (NMAX + 1))/2 ];
@@ -102,16 +102,16 @@ void write_data_cell(int step){
     int d, n;
     fprintf(fp, "%d\n", n_particles);
     for(d = 0; d < NDIM; ++d){
-        fprintf(fp, "%lf %lf\n",0.0,1);
+        fprintf(fp, "%lf %lf\n",0.0,Box_coef*max_length_cutoff);
     }
-    if (NDIM == 2) fprintf(fp, "%lf %lf\n",0.0,1.0);
+    if (NDIM == 2) fprintf(fp, "%lf %lf\n",0.0,Box_coef*max_length_cutoff);
 
     for (size_t i = 0; i < cell_list.max_population; i++)
     {
         /* code */
         if (cell_list.cell[i].isplaceholder == 0)
         {
-            for(d = 0; d < NDIM; ++d) fprintf(fp, "%f\t", cell_list.cell[i].r[d]);
+            for(d = 0; d < NDIM; ++d) fprintf(fp, "%f\t", cell_list.cell[i].r[d]*Box_coef*max_length_cutoff);
             if (NDIM == 2) fprintf(fp, "%f\t", 0.);
             fprintf(fp, "%lf\n", 2.*cell_list.cell[i].radius);
         }
@@ -594,7 +594,7 @@ int main(int argc, const char * argv[])
     assert(delta > 0.0);
     n_particles = n_particlesA + n_particlesB;
     
-    double max_length_cutoff = 1.*2.2*fmax(radiusB,radiusA);
+    max_length_cutoff = 1.*2.2*fmax(radiusB,radiusA);
 
     for (size_t i = 0; i < NDIM*NDIM; i++)
     {
@@ -642,6 +642,7 @@ int main(int argc, const char * argv[])
     
     SqMS_get_interaction_shape(&int_shape,&cell_list,max_length_cutoff,floppyBox);
     SqMS_interaction_shape_to_bounding_shape(&int_shape, &bounding_shape);
+    bounding_coordinates = calloc((int_shape.height+1)*(int_shape.width+1)*NDIM, sizeof(int));
     n_bounding_cells = SqMS_bounding_shape_to_bounding_coordinates(bounding_shape,int_shape.height+1,int_shape.width+1,bounding_coordinates);
     SqMS_free_interaction_shape(&int_shape);
     free(bounding_shape);

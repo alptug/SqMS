@@ -39,7 +39,7 @@ int SqMS_biggest_lower_bound(const double arr[], const int n, const double x)
     while (high - low != 1)
     {
         int mid = low + (high - low) / 2;
-        int val = arr[mid];
+        double val = arr[mid];
 
         if (val <= x && mid != low)
         {
