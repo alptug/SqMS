@@ -47,7 +47,7 @@ double SqMS_get_energy_from_pair(int i, int j, double *energy_matrix);
 double SqMS_get_total_energy(int N, double *energy_matrix);
 
 /**
- * @brief Set the energy object contribution of the particle pair (i,j)
+ * @brief Set the energy  contribution of the particle pair (i,j)
  * 
  * @param energy the energy value to be set
  * @param i index of a particle

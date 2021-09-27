@@ -286,8 +286,14 @@ double SqMS_distance_squared_floppy_PBC(double *particle1, double *particle2,
     {
         tmp = particle1[i] - particle2[i];
         tmp -= floor(tmp + 0.5);
+        /*tmp = fabs(particle1[i] - particle2[i]);
+        if(tmp>0.5)
+        {
+            tmp = 1-tmp;
+        }*/
         delta_r[i] = tmp;
     }
+    
     for (size_t i = 0; i < num_dimensions; i++)
     {
         tmp = 0;
