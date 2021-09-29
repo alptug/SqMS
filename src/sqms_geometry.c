@@ -271,7 +271,17 @@ void SqMS_free_bounding_box(bounding_box_t* bbox)
     free(bbox->cell_indices);
 }
 
-
+void SqMS_free_cell_list(cell_list_t* cell_list)
+{
+    free(cell_list->advised_insertion);
+    free(cell_list->cell);
+    free(cell_list->cell_population);
+    for (size_t i = 0; i < NDIM; i++)
+    {
+        free(cell_list->limits[i]);
+    }
+    
+}
 //==============================================================================
 // IT IS TIME TO DO FLOPPY STUFF
 //==============================================================================
