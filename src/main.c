@@ -25,31 +25,31 @@
 /* ------------------------  */
 
 //#define NDIM 2 //number of dimensions
-#define N 50
-#define A_coef 10
+#define N 400
+#define A_coef 2
 #define B_coef 1
-#define Box_coef 26
+#define Box_coef 35
 #define NMAX  ((A_coef + B_coef)*N)//max number of particles
 #define ITER_MAX 100000000 //max number of iterations
 #define DONT_WRITE 0
 
 const int n_particlesA = A_coef*N; //number of particles
 const int n_particlesB = B_coef*N; //number of particles
-const double pressure = 100; // NVT if negative
+const double pressure = 0.01; // NVT if negative
 int n_particles; //number of particles
 enum detection{YES, NO};
 
-const int mc_steps = 1000000; //it says steps but they are in fact sweeps
-const int NAdjust = mc_steps / 5;
+const int mc_steps = 500000; //it says steps but they are in fact sweeps
+const int NAdjust = mc_steps / 10;
 const int output_steps = 1000; //output a file every this many sweeps
 const int SANITY_CHECK = 1;
-const int SANITY_CHECK_PERIOD = 2000;
+const int SANITY_CHECK_PERIOD = 100;
 
 //const double diameter = 1.0; //particle diameter
 double delta = 0.004; //MCMC move delta
 double Vdelta = 0.01; //MCMC move delta
 double beta = 1; //inverse temperature
-const double well_depth = 10;
+const double well_depth = 5;
 enum detection collision_detection = YES; //detect hard cores
 enum particle_type{A,B};
 cell_list_t cell_list;
@@ -77,6 +77,20 @@ interaction_shape_t int_shape;
 /* ---------------------------------  */
 /*  FILE READER & WRITER SUBROUTINES  */
 /* ---------------------------------  */
+
+void read_parameters()
+{
+    FILE* fp = fopen("input.dat", "r"); //open  initial file
+    if (fp == NULL) { //check if the  file exists
+        printf("Cannot find parameters in directory, reverting to default values.\n");
+    }
+    else
+    {
+        //    first line is # of particles A
+        fscanf(fp,"%d",&n_particles);
+        fclose(fp);
+    }
+}
 
 /*void read_data(void){
     FILE* fp = fopen(init_filename, "r"); //open  initial file
@@ -109,7 +123,6 @@ void write_data_cell(int step){
         return;
     }
     
-
     char buffer[64];
     sprintf(buffer, "data/coords_step%07d.dat", step);
     FILE* fp = fopen(buffer, "w");
@@ -139,6 +152,75 @@ void write_data_cell(int step){
     fclose(fp);
 }
 
+void write_data_cell_native(int step){
+    if (DONT_WRITE == 1)
+    {
+        return;
+    }
+    
+    char buffer[64];
+    sprintf(buffer, "data_gl/coords_step%07d.dat", step);
+    FILE* fp = fopen(buffer, "w");
+    assert(fp != NULL);
+    int d, n;
+    fprintf(fp, "%d\n", n_particles);
+    for(d = 0; d < NDIM; ++d){
+        fprintf(fp, "%lf %lf\n",0.0,Box_coef*max_length_cutoff);
+    }
+    if (NDIM == 2) fprintf(fp, "%lf %lf\n",0.0,0.0);
+
+    for (size_t i = 0; i < cell_list.max_population; i++)
+    {
+        /* code */
+        if (cell_list.cell[i].isplaceholder == 0)
+        {
+            for(d = 0; d < NDIM; ++d) fprintf(fp, "%f\t", (floppyBox[d*NDIM] * 
+                                cell_list.cell[i].r[0] + floppyBox[d*NDIM + 1] * 
+                                                        cell_list.cell[i].r[1]));
+            if (NDIM == 2) fprintf(fp, "%f\t", 0.);
+            fprintf(fp, "%lf\n", 2.*cell_list.cell[i].radius);
+            
+        }
+        
+    }
+    
+    fclose(fp);
+}
+
+void write_data_cell_raw(int step){
+    if (DONT_WRITE == 1)
+    {
+        return;
+    }
+    
+    char buffer[64];
+    sprintf(buffer, "data_raw/coords_step%07d.dat", step);
+    FILE* fp = fopen(buffer, "w");
+    assert(fp != NULL);
+    int d, n;
+    fprintf(fp, "%d\n", n_particles);
+    for(d = 0; d < NDIM; ++d){
+        fprintf(fp, "%lf %lf\n",0.0,Box_coef*max_length_cutoff);
+    }
+    if (NDIM == 2) fprintf(fp, "%lf %lf\n",0.0,0.0);
+
+    for (size_t i = 0; i < cell_list.max_population; i++)
+    {
+        /* code */
+        if (cell_list.cell[i].isplaceholder == 0)
+        {
+            for(d = 0; d < NDIM; ++d) fprintf(fp, "%f\t", (floppyBox[d*NDIM] * 
+                                cell_list.cell[i].r[0] + floppyBox[d*NDIM + 1] * 
+                                                        cell_list.cell[i].r[1]));
+            if (NDIM == 2) fprintf(fp, "%f\t", 0.);
+            fprintf(fp, "%lf\n", 2.*cell_list.cell[i].radius);
+            
+        }
+        
+    }
+    
+    fclose(fp);
+}
 /* ___________________________  */
 /*  Euclidean metric with PBC   */
 /* ---------------------------  */
@@ -225,8 +307,9 @@ double particle_energy_cell_list(bounding_box_t *bbox, particle_t *particle)
     double diff = fabs(t_energy - check_energy);
     if (diff > eps)
     {
-        //assert(diff < eps);
-        //printf("fp error?\n");
+        printf("fp error?\n");
+        assert(diff < eps);
+        
     }
     
     return t_energy;
@@ -354,7 +437,7 @@ int move_particle(double del, int step)
     }
     
     bounding_box_t bbox;
-    SqMS_get_floppy_bounding_shape(&cell_list,&bbox,cell_ind,bounding_coordinates,n_bounding_cells);
+    SqMS_get_floppy_bounding_shape(&cell_list,&bbox,new_cell_ind,bounding_coordinates,n_bounding_cells);
 
     //collision detection
     if (collision_detection == YES)
@@ -385,8 +468,20 @@ int move_particle(double del, int step)
     double energy_backup[n_particles];
     for (size_t i = 0; i < n_particles; i++)
     {
-        energy_backup[i] = SqMS_get_energy_from_pair(chosen.uid,i,energy_matrix);
+        energy_backup[i] = SqMS_get_energy_from_pair(chosen.uid,i,energy_matrix);        
     }
+
+    if (new_cell_ind != cell_ind)
+    {
+        for (size_t i = 0; i < n_particles; i++)
+        {
+            if (i !=chosen.uid)
+            {
+                SqMS_set_energy_of_pair(0,i,chosen.uid,energy_matrix);
+            }
+        }
+    }
+    
     
 
     particle_energy_cell_list(&bbox, &chosen);
@@ -687,10 +782,6 @@ int move_volume(double delV, int step)
     double minus_beta_Delta_Free_energy = (-new_energy + old_energy 
                                 - pressure * (volume - old_volume)
                                 + n_particles * log(volume/old_volume));
-    /*
-    TODO: accept/reject
-    
-    */
    
 
    if (minus_beta_Delta_Free_energy>=0 || 
@@ -722,8 +813,7 @@ int move_volume(double delV, int step)
 }
 
 /* --------------------------------------------------------------------- */
-/*      EXPERIMENT FUNCTIONS --> Run MCMC for particular objectives      */
-/* --------------------------------------------------------------------- */
+
 
 void init_positions_hot_cell_list(void)
 {
@@ -876,7 +966,7 @@ void find_delta()
         for(int n = 0; n < n_particles; ++n){
             if (pressure > 0 && dsfmt_genrand() < 1./(double)(n_particles+1))
             {
-                //volume_accepted += move_volume(Vdelta, 1);
+                volume_accepted += move_volume(Vdelta, 1);
                 volume_trials++;
             }
             else
@@ -1044,11 +1134,12 @@ int main(int argc, const char * argv[])
 
     find_delta();
     SqMS_free_cell_list(&cell_list);
+    total_energy = 0 ;
     SqMS_init_floppy_cell_list(&cell_list, floppyBox, max_length_cutoff, fmin(particle_volumeB,particle_volumeA));
     init_positions_hot_cell_list();
     init_particle_energies_cell();
     write_data_cell(0);
-    //total_energy = 0 ;
+    
 
 
 
