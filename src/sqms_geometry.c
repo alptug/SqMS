@@ -635,7 +635,9 @@ void SqMS_get_floppy_bounding_shape(cell_list_t *cell_list, bounding_box_t* bbox
             }
             tmp[j] = tmp[j] % cell_list->list_shape[j];
         }
-        bbox->cell_indices[i] = SqMS_cell_position_to_id(cell_list,tmp);
+        int index = SqMS_cell_position_to_id(cell_list,tmp);
+        assert(index > -1 && index < cell_list->num_cell);
+        bbox->cell_indices[i] = index;
     }
     
 }

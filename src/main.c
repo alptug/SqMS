@@ -24,8 +24,8 @@
 /* Initialization variables  */
 /* ------------------------  */
 
-//#define NDIM 2 //number of dimensions
-#define N 400
+#define NDIM 2 //number of dimensions
+#define N 35
 #define A_coef 2
 #define B_coef 1
 #define Box_coef 35
@@ -33,23 +33,24 @@
 #define ITER_MAX 100000000 //max number of iterations
 #define DONT_WRITE 0
 
-const int n_particlesA = A_coef*N; //number of particles
-const int n_particlesB = B_coef*N; //number of particles
-const double pressure = 0.01; // NVT if negative
+int n_particlesA = A_coef*N; //number of particles
+int n_particlesB = B_coef*N; //number of particles
+double pressure = 0.01; // NVT if negative
+double well_depth = 5;
 int n_particles; //number of particles
 enum detection{YES, NO};
 
 const int mc_steps = 500000; //it says steps but they are in fact sweeps
-const int NAdjust = mc_steps / 10;
+const int NAdjust = mc_steps / 50;
 const int output_steps = 1000; //output a file every this many sweeps
 const int SANITY_CHECK = 1;
-const int SANITY_CHECK_PERIOD = 100;
+const int SANITY_CHECK_PERIOD = 2000;
 
 //const double diameter = 1.0; //particle diameter
 double delta = 0.004; //MCMC move delta
 double Vdelta = 0.01; //MCMC move delta
 double beta = 1; //inverse temperature
-const double well_depth = 5;
+
 enum detection collision_detection = YES; //detect hard cores
 enum particle_type{A,B};
 cell_list_t cell_list;
@@ -61,11 +62,11 @@ const double tolerance = 1e-6;
 /*  Simulation variables  */
 /* ---------------------  */
 
-const double radiusA = 1.426, radiusB = 1;
+double radiusA = 1.426, radiusB = 1;
 double particle_volumeA,particle_volumeB,max_length_cutoff;
 
 double total_energy;
-double energy_matrix[ (NMAX * (NMAX + 1))/2 ];
+double *energy_matrix;
 double floppyBox[NDIM*NDIM];
 double volume;
 
@@ -87,7 +88,32 @@ void read_parameters()
     else
     {
         //    first line is # of particles A
-        fscanf(fp,"%d",&n_particles);
+        fscanf(fp,"%d\n",&n_particlesA);
+        printf("N_A = %d\n", n_particlesA);
+
+        fscanf(fp,"%d\n",&n_particlesB);
+        printf("N_B = %d\n", n_particlesB);
+
+        double r_radii = 0;
+        fscanf(fp,"%lf\n",&r_radii);
+        if(r_radii > 1)
+        {
+            radiusA = 1;
+            radiusB = 1/r_radii;
+        }
+        else
+        {
+            radiusA = r_radii;
+            radiusB = 1;
+        }
+
+        printf("r_A = %lf, r_B = %lf\n", radiusA, radiusB);
+
+        fscanf(fp,"%lf\n",&pressure);
+        printf("P = %lf\n", pressure);
+
+        fscanf(fp,"%lf\n",&well_depth);
+        printf("E = %lf\n", well_depth);
         fclose(fp);
     }
 }
@@ -343,6 +369,62 @@ double sanity_particle_energy(particle_t *particle, bounding_box_t *bbox)
                 int in_box = 0;
                 for (size_t j = 0; j < bbox->num_cells; j++)
                 {
+                    assert(bbox->cell_indices[j] > -1 && bbox->cell_indices[j] < cell_list.num_cell);
+                    if (cell_ind == bbox->cell_indices[j])
+                    {
+                        in_box = 1;
+                        
+                        break;
+                    }
+                    
+                }
+                if(in_box==0) printf("BUG: Interaction outside of Interaction bound!\n");
+                assert(in_box == 1);
+
+
+            }
+            t_energy += p_energy;
+        }
+    }
+    
+    return t_energy;
+}
+
+double dump_all_energies_related(particle_t *particle, bounding_box_t *bbox)
+{
+    double p_energy = 0;
+    double t_energy = 0;
+    double p_dist2 = 0;
+    for(size_t i = 0; i<cell_list.max_population; i++)
+    {
+        if (cell_list.cell[i].isplaceholder == 1) continue;
+        if (particle->uid == cell_list.cell[i].uid) continue;
+
+        p_dist2 = dist2(cell_list.cell[i].r,particle->r);
+        if (p_dist2 < max_length_cutoff*max_length_cutoff)
+        {
+            p_energy = pair_potential(p_dist2, 
+                    cell_list.cell[i].radius+particle->radius);
+
+            if(collision_detection == YES && sqrt(p_dist2) < cell_list.cell[i].radius+particle->radius)
+            {
+                printf("Bug in collision detection\n");
+                assert(sqrt(p_dist2) > cell_list.cell[i].radius+particle->radius);
+            }
+
+            if (fabs(p_energy) > tolerance)
+            {
+                int cell_ind = i/cell_list.max_population_per_cell;
+                int in_box = 0;
+                printf("ID: %d, distance: %lf, cell: %d, calc cell: %d, 1.1*radii sum: %lf\n",
+                        cell_list.cell[i].uid,
+                        sqrt(p_dist2),
+                        cell_ind,
+                        SqMS_find_where_particle_belongs(&cell_list,cell_list.cell[i].r),
+                        1.1*(cell_list.cell[i].radius +particle->radius)
+                        );
+                for (size_t j = 0; j < bbox->num_cells; j++)
+                {
                     if (cell_ind == bbox->cell_indices[j])
                     {
                         in_box = 1;
@@ -352,6 +434,26 @@ double sanity_particle_energy(particle_t *particle, bounding_box_t *bbox)
                 }
                 if(in_box==0) printf("BUG: Interaction outside of Interaction bound!\n");
                 assert(in_box == 1);
+
+                bounding_box_t pbbox;
+        
+                SqMS_get_floppy_bounding_shape(&cell_list,&pbbox,cell_ind,
+                                        bounding_coordinates,n_bounding_cells);
+                
+                int o_cell = SqMS_find_where_particle_belongs(&cell_list,particle->r);
+                for (size_t j = 0; j < pbbox.num_cells; j++)
+                {
+                    if (o_cell == pbbox.cell_indices[j])
+                    {
+                        in_box = 1;
+                        break;
+                    }
+                    
+                }
+                if(in_box==0) printf("BUG: Interaction outside of the other Interaction bound!\n");
+                assert(in_box == 1);
+                SqMS_free_bounding_box(&pbbox);
+
             }
             t_energy += p_energy;
         }
@@ -359,7 +461,6 @@ double sanity_particle_energy(particle_t *particle, bounding_box_t *bbox)
     
     return t_energy;
 }
-
 /* ___________________________  */
 /*  MOVE PARTICLE SUB_ROUTINE   */
 /* ---------------------------  */
@@ -401,6 +502,15 @@ int move_particle(double del, int step)
         {
             printf("old_energy: %lf, sanity_check: %lf, diff: %lf\n",
             old_energy, sanity_old_energy, fabs(old_energy - sanity_old_energy));
+
+            SqMS_dump_all_interactions(chosen.uid,n_particles, energy_matrix);
+            dump_all_energies_related(&chosen,&sbbox);
+
+            for (size_t i = 0; i < sbbox.num_cells; i++)
+            {
+                printf("%d ",sbbox.cell_indices[i]);
+            }
+            printf("\n");
         }
         SqMS_free_bounding_box(&sbbox);
         assert(fabs(old_energy - sanity_old_energy) < tolerance);
@@ -449,9 +559,9 @@ int move_particle(double del, int step)
                 int index = bbox.cell_indices[c] * cell_list.max_population_per_cell + pp;
                 if (chosen.uid != cell_list.cell[index].uid && cell_list.cell[index].isplaceholder == 0)
                 {
-                    double seperation = dist(chosen.r, cell_list.cell[index].r);
+                    double seperation2 = dist2(chosen.r, cell_list.cell[index].r);
                     double min_seperation = chosen.radius + cell_list.cell[index].radius;
-                    if (seperation < min_seperation)
+                    if (seperation2 < min_seperation*min_seperation)
                     {
                         /* code */
                         SqMS_free_bounding_box(&bbox);
@@ -568,6 +678,7 @@ int move_volume(double delV, int step)
             {
                 bounding_box_t sbbox;
                 int cellofchosen = SqMS_find_where_particle_belongs(&cell_list,chosen->r);
+                assert (cellofchosen == i/cell_list.max_population_per_cell);
 
                 SqMS_get_floppy_bounding_shape(&cell_list,&sbbox,cellofchosen,
                                             bounding_coordinates,
@@ -694,9 +805,9 @@ int move_volume(double delV, int step)
     double old_energy = SqMS_get_total_energy(n_particles,energy_matrix);
     assert(fabs(old_energy-total_energy)<tolerance);
 
-    double old_energy_matrix[ (NMAX * (NMAX + 1))/2 ];
+    double old_energy_matrix[ (n_particles * (n_particles + 1))/2 ];
     memcpy(old_energy_matrix,energy_matrix,
-            sizeof(double)*(NMAX * (NMAX + 1))/2);
+            sizeof(double)*(n_particles * (n_particles + 1))/2);
     
     for (size_t cell_i = 0; cell_i < cell_list.num_cell; cell_i++)
     {
@@ -769,7 +880,7 @@ int move_volume(double delV, int step)
             double sanity_new_energy = sanity_particle_energy(chosen, &sbbox);
             if (fabs(new_penergy - sanity_new_energy) >= tolerance)
             {
-                printf("new_energy: %lf, sanity_check: %lf, diff: %lf\n",
+                printf("vol new_energy: %lf, sanity_check: %lf, diff: %lf\n",
                 new_penergy, sanity_new_energy, fabs(new_penergy - sanity_new_energy));
                 
             }
@@ -805,7 +916,7 @@ int move_volume(double delV, int step)
                 n_bounding_cells*NDIM*sizeof(int));
         
         memcpy(energy_matrix,old_energy_matrix,
-            sizeof(double)*(NMAX * (NMAX + 1))/2);
+            sizeof(double)*(n_particles * (n_particles + 1))/2);
 
        return 0;
    }
@@ -975,7 +1086,7 @@ void find_delta()
                 move_trials++;
             }
         }
-        if(step % output_steps == 0)
+        if(step % output_steps == 0 && step != 0)
         {
             m_acceptance = (double)move_accepted / (double) move_trials;
             move_arr_acc[step / output_steps] = m_acceptance;
@@ -1078,11 +1189,13 @@ void find_delta()
 
 int main(int argc, const char * argv[])
 {
+    read_parameters();
+    
     assert(radiusA > 0.0);
     assert(radiusB > 0.0);
     assert(delta > 0.0);
     n_particles = n_particlesA + n_particlesB;
-    
+    energy_matrix = calloc((n_particles * (n_particles + 1))/2,sizeof(double));
     max_length_cutoff = 1.*2.2*fmax(radiusB,radiusA);
 
     for (size_t i = 0; i < NDIM*NDIM; i++)
