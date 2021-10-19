@@ -52,7 +52,7 @@ DATADIR=data
 all: $(BIN)
 	@echo Project has been compiled
 
-release: CFLAGS=-Wall -O2 -DNDEBUG -march=native
+release: CFLAGS=-Wall -O3 -DNDEBUG -march=native
 release: clean
 release: $(BIN)
 

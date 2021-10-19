@@ -117,3 +117,48 @@ double SqMS_determinant(double *matrix, int dimension)
     }
     return det;
 }
+
+
+void print_ghostbusters()
+{
+    printf("ghostbusters logo\n");
+}
+
+int compare_ints(const void* a, const void* b)
+{
+    int arg1 = *(const int*)a;
+    int arg2 = *(const int*)b;
+ 
+    if (arg1 < arg2) return -1;
+    if (arg1 > arg2) return 1;
+    return 0;
+ 
+    // return (arg1 > arg2) - (arg1 < arg2); // possible shortcut
+    // return arg1 - arg2; // erroneous shortcut (fails if INT_MIN is present)
+}
+
+void SqMS_sorted_set_difference(const int* difference_of_this, const int* from_this, int* checkboard, int num_el)
+{
+    
+    
+    int i = 0, j = 0;
+    while(i<num_el && j<num_el)
+    {
+        if(difference_of_this[i] < from_this[j])
+        {
+            checkboard[i] = 1;
+            i++;
+        }
+        else if(difference_of_this[i] == from_this[j])
+        {
+            checkboard[i] = 0;
+            i++;
+            j++;
+        }
+        else
+        {
+            j++;
+        }
+    }
+    for(;i<num_el;i++) checkboard[i] = 1;
+}

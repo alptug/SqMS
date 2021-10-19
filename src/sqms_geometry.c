@@ -467,7 +467,7 @@ void SqMS_get_interaction_shape(interaction_shape_t* bound,
     double ellipse_bounds[2] = {0,0}; 
     SqMS_get_ellipse_bounding_box(ellipse_bounds, cutoff_length, floppyBox);
     size_t width = 2 * (size_t) ceil(ellipse_bounds[0] / cell_list->dimensions[0]);
-    size_t height = 2 * (size_t) ceil(ellipse_bounds[0] / cell_list->dimensions[0]);
+    size_t height = 2 * (size_t) ceil(ellipse_bounds[1] / cell_list->dimensions[1]);
     bound->shape = (int*) calloc(width*height, sizeof(int));
     bound->height = height;
     bound->width = width;
@@ -536,6 +536,21 @@ void SqMS_get_interaction_shape(interaction_shape_t* bound,
                         {
                             contains = 1;
                         }
+                        else
+                        {
+                            SqMS_get_ellipse_horizontal_intersects(intersects,hline+cell_list->dimensions[1], 
+                                                    cutoff_length, floppyBox);
+                            if (vline <= intersects[0] 
+                                && intersects[0] < vline + cell_list->dimensions[0])
+                            {
+                                contains = 1;
+                            }
+                            else if (vline <= intersects[1] 
+                                    && intersects[1] < vline + cell_list->dimensions[0])
+                            {
+                                contains = 1;
+                            }
+                        }
                     }
                 }
                 
@@ -591,8 +606,8 @@ int SqMS_bounding_shape_to_bounding_coordinates(int *bounding_shape, int height,
         {
             if (bounding_shape[i*width+j]==1)
             {
-                bounding_coordinates[2*count] = i - origin_i;;
-                bounding_coordinates[2*count+1] = j - origin_j;
+                bounding_coordinates[2*count+1] = i - origin_i;;
+                bounding_coordinates[2*count] = j - origin_j;
                 count++;
             }
         }

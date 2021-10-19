@@ -90,6 +90,9 @@ double SqMS_calculate_total_energy_contributions(int N, double *energy_matrix);
  */
 int SqMS_calculate_index_from_pair(int i, int j);
 
+
+void SqMS_dump_all_interactions(size_t i, size_t N, double *energy_matrix);
+
 #if defined(__cplusplus)
 }
 #endif

@@ -96,3 +96,31 @@ double SqMS_calculate_total_energy_contributions(int N, double *energy_matrix)
     }
     return twofold_total_energy/2.;
 }
+
+void SqMS_dump_all_interactions(size_t i, size_t N, double *energy_matrix)
+{
+    printf("Dumping all interactions for particle %ld\n", i);
+    printf("----------------------------------------------\n");
+    printf("Particle id \t pair energy contribution\n");
+
+    double calculated_total = 0;
+    double recorded_total = SqMS_get_energy_from_pair(i,i,energy_matrix);
+    double tmp;
+    for (size_t j=0; j < N; j++)
+    {
+        if (j == i) continue;
+        tmp = SqMS_get_energy_from_pair(i,j,energy_matrix);
+        if (tmp != 0)
+        {
+            printf("%ld\t\t%lf\n",j,tmp);
+            calculated_total += tmp;
+            tmp = 0;
+        }
+
+    }
+    printf("----------------------------------------------\n");
+    printf("Calculated total: %lf, Recorded total: %lf, Diff: %lf\n",
+            calculated_total,
+            recorded_total,
+            fabs(calculated_total-recorded_total));
+}
